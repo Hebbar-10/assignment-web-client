@@ -17,6 +17,7 @@
 # Do not use urllib's HTTP GET and POST mechanisms.
 # Write your own HTTP GET and POST
 # The point is to understand what you have to send and get experience with it
+# https://www.internalpointers.com/post/making-http-requests-sockets-python 
 
 import sys
 import socket
@@ -32,8 +33,13 @@ class HTTPResponse(object):
         self.code = code
         self.body = body
 
-class HTTPClient(object):
-    #def get_host_port(self,url):
+class HTTPClient(object): 
+    def get_host_port(self,url): # https://docs.python.org/3.6/library/urllib.parse.html
+        parsed_url = urllib.parse.urlparse(url)
+        host = parsed_url.hostname 
+        port = parsed_url.port if parsed_url.port else 80  # Use default port 80 if not specified
+
+        return host, port  
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -41,13 +47,19 @@ class HTTPClient(object):
         return None
 
     def get_code(self, data):
-        return None
+        # Splitting the response at new lines and getting the first line (status line)
+        status_line = data.split('\r\n')[0]
+        # Extracting the status code from the status line
+        status_code = int(status_line.split(' ')[1])
+        return status_code
 
     def get_headers(self,data):
         return None
 
     def get_body(self, data):
-        return None
+        # Splitting the response at double new lines to separate body from the headers
+        body = data.split('\r\n\r\n')[1]
+        return body
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
@@ -68,13 +80,62 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        code = 500
-        body = ""
+        host, port = self.get_host_port(url)
+        path = urllib.parse.urlparse(url).path or '/'
+        # Connecting to the server
+        self.connect(host, port)
+        
+        # Constructing the GET request
+        request_line = f"GET {path} HTTP/1.1\r\n"
+        headers = f"Host: {host}\r\n"
+        headers += "Connection: close\r\n\r\n"  # Closing the connection after completion
+        
+        # Sending the request
+        self.sendall(request_line + headers)
+        
+        # Receiving the response
+        response = self.recvall(self.socket)
+        
+        # Closing the connection
+        self.close()
+        
+        # Parsing the response
+        code = self.get_code(response)
+        body = self.get_body(response)
+        
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 500
-        body = ""
+        host, port = self.get_host_port(url)
+        path = urllib.parse.urlparse(url).path or '/'
+        # Connecting to the server
+        self.connect(host, port)
+        
+        # Constructing the body
+        body = ''
+        if args:
+            body = urllib.parse.urlencode(args)
+        
+        # Constructing the headers
+        headers = f"POST {path} HTTP/1.1\r\n"
+        headers += f"Host: {host}\r\n"
+        headers += "Content-Type: application/x-www-form-urlencoded\r\n"
+        headers += f"Content-Length: {len(body)}\r\n"
+        headers += "\r\n"
+        
+        # Sending the request
+        self.sendall(headers + body)
+        
+        # Receiving the response
+        response = self.recvall(self.socket)
+
+        # Closing the connection
+        self.close()
+
+        # Parsing the response
+        code = self.get_code(response)
+        body = self.get_body(response)
+        
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
@@ -93,3 +154,4 @@ if __name__ == "__main__":
         print(client.command( sys.argv[2], sys.argv[1] ))
     else:
         print(client.command( sys.argv[1] ))
+
